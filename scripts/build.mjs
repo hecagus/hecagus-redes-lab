@@ -1,0 +1,17 @@
+import { cp, mkdir, rm, readFile, writeFile, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+await rm('dist', { recursive: true, force: true });
+await mkdir('dist');
+for (const file of ['index.html','icon.svg','manifest.webmanifest','src']) await cp(file, `dist/${file}`, {recursive:true});
+const assets = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest', ...(await readdir('src')).map(f=>`/src/${f}`)];
+const hash = createHash('sha256');
+for (const file of assets.filter(f=>f!=='/')) hash.update(await readFile(`dist${file}`));
+const version = hash.digest('hex').slice(0,12);
+await writeFile('dist/sw.js', `const CACHE='hecagus-redes-${version}';
+const ASSETS=${JSON.stringify(assets)};
+self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('hecagus-redes-')&&k!==CACHE).map(k=>caches.delete(k))))));
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin)return;
+e.respondWith(fetch(e.request).catch(()=>caches.match(e.request).then(r=>r||(e.request.mode==='navigate'?caches.match('/index.html'):Response.error()))));});
+`);
+console.log(`Built ${assets.length} offline assets · ${version}`);
